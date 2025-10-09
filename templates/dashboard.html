@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SecurePass</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="dashboard">
+            <header class="dashboard-header">
+                <div class="header-content">
+                    <h1>🔐 SecurePass Dashboard</h1>
+                    <div class="user-info">
+                        <span class="welcome-text">Welcome, {{ user.name }}!</span>
+                        <a href="/logout" class="btn btn-outline">Logout</a>
+                    </div>
+                </div>
+            </header>
+            
+            <div class="dashboard-content">
+                <div class="success-message">
+                    <div class="success-icon">✅</div>
+                    <h2>Authentication Successful!</h2>
+                    <p>You have successfully logged in using passwordless authentication.</p>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👤</div>
+                        <div class="stat-content">
+                            <h3>Account</h3>
+                            <p>{{ user.email }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">📱</div>
+                        <div class="stat-content">
+                            <h3>Registered Devices</h3>
+                            <p>{{ credential_count }} device{{ 's' if credential_count != 1 else '' }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">🛡️</div>
+                        <div class="stat-content">
+                            <h3>Security Level</h3>
+                            <p>Maximum</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">🔒</div>
+                        <div class="stat-content">
+                            <h3>Authentication</h3>
+                            <p>FIDO2/WebAuthn</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>🎉 Congratulations!</h3>
+                    <div class="info-content">
+                        <p>You've successfully experienced passwordless authentication with SecurePass. Here's what just happened:</p>
+                        <ul>
+                            <li><strong>Secure Registration:</strong> Your device generated a unique cryptographic key pair</li>
+                            <li><strong>Biometric Protection:</strong> Your private key is secured by your device's biometric authentication</li>
+                            <li><strong>Zero Passwords:</strong> No passwords were transmitted or stored anywhere</li>
+                            <li><strong>Phishing Resistant:</strong> The cryptographic challenge-response protects against attacks</li>
+                            <li><strong>Multi-Device Ready:</strong> You can register additional devices using the same email</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <a href="/register" class="btn btn-secondary">
+                        <span class="btn-icon">📱</span>
+                        Register Another Device
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

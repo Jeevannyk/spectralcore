@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecurePass - Passwordless Authentication</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="hero-section">
+            <div class="logo">
+                <h1>🔐 SecurePass</h1>
+                <p class="tagline">Passwordless Authentication Made Simple</p>
+            </div>
+            
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Ultra Secure</h3>
+                    <p>FIDO2/WebAuthn standard with biometric authentication</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Lightning Fast</h3>
+                    <p>Login in seconds with your fingerprint or face</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">📱</div>
+                    <h3>Multi-Device</h3>
+                    <p>Register multiple devices for seamless access</p>
+                </div>
+            </div>
+            
+            <div class="auth-buttons">
+                <a href="/register" class="btn btn-primary">
+                    <span class="btn-icon">👤</span>
+                    Get Started - Register
+                </a>
+                <a href="/login" class="btn btn-secondary">
+                    <span class="btn-icon">🔓</span>
+                    Already have an account? Login
+                </a>
+            </div>
+            
+            <div class="security-note">
+                <p>🔒 Your biometric data never leaves your device. We use industry-standard WebAuthn for maximum security.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

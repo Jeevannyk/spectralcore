@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - SecurePass</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="auth-form">
+            <div class="form-header">
+                <h1>🔐 SecurePass</h1>
+                <h2>Welcome Back</h2>
+                <p>Login with your biometric authentication</p>
+            </div>
+            
+            <form id="loginForm" class="form">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" required placeholder="Enter your email">
+                </div>
+                
+                <button type="submit" class="btn btn-primary" id="loginBtn">
+                    <span class="btn-icon">🔓</span>
+                    Login with Biometrics
+                </button>
+            </form>
+            
+            <div id="status" class="status-message"></div>
+            
+            <div class="form-footer">
+                <p>Don't have an account? <a href="/register">Register here</a></p>
+                <p><a href="/">← Back to Home</a></p>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='webauthn.js') }}"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const statusDiv = document.getElementById('status');
+            const loginBtn = document.getElementById('loginBtn');
+            
+            if (!email) {
+                showStatus('Please enter your email', 'error');
+                return;
+            }
+            
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="btn-icon">⏳</span> Authenticating...';
+            
+            try {
+                const result = await loginUser(email);
+                if (result.success) {
+                    showStatus('Login successful! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 1500);
+                } else {
+                    showStatus(result.error || 'Login failed', 'error');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<span class="btn-icon">🔓</span> Login with Biometrics';
+                }
+            } catch (error) {
+                showStatus('Login failed: ' + error.message, 'error');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<span class="btn-icon">🔓</span> Login with Biometrics';
+            }
+        });
+        
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type}`;
+        }
+    </script>
+</body>
+</html>

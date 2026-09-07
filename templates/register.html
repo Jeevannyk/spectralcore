@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>Register - SecurePass</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="auth-form">
+            <div class="form-header">
+                <h1><svg class="logo-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="url(#lockGrad)"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" stroke="url(#lockGrad)" stroke-width="2.2" stroke-linecap="round"/><rect x="11.1" y="14" width="1.8" height="4" rx="0.9" fill="#0f0f18"/><defs><linearGradient id="lockGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#7b79ff"/><stop offset="1" stop-color="#5ac8fa"/></linearGradient></defs></svg>SecurePass</h1>
+                <h2>Create Your Account</h2>
+                <p>Register with biometric authentication - no passwords needed!</p>
+            </div>
+            
+            <form id="registerForm" class="form">
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input type="text" id="name" name="name" required placeholder="Enter your full name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" required placeholder="Enter your email">
+                </div>
+                
+                <button type="submit" class="btn btn-primary" id="registerBtn">
+                    <span class="btn-icon"><svg class="icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                    Register with Biometrics
+                </button>
+            </form>
+            
+            <div id="status" class="status-message"></div>
+
+            <div id="recoveryCodesBox" class="security-note" hidden>
+                <h3 style="margin-bottom: 10px;">Save your recovery codes</h3>
+                <p>If you lose access to every registered device, one of these one-time codes
+                   logs you back in. They're shown only once — save them somewhere safe now.</p>
+                <ul id="recoveryCodesList" style="list-style: none; margin: 15px 0; font-family: monospace; font-size: 1.05rem; line-height: 1.9;"></ul>
+                <button type="button" class="btn btn-primary" id="continueBtn" style="width: 100%;">I've saved these — Continue</button>
+            </div>
+
+            <div class="form-footer">
+                <p>Already have an account? <a href="/login">Login here</a></p>
+                <p><a href="/">← Back to Home</a></p>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='webauthn.js') }}"></script>
+    <script>
+        const ICON_LOCK = '<svg class="icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+        const ICON_SPINNER = '<svg class="icon icon-spin" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>';
+
+        const registerForm = document.getElementById('registerForm');
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const statusDiv = document.getElementById('status');
+            const registerBtn = document.getElementById('registerBtn');
+            
+            if (!name || !email) {
+                showStatus('Please fill in all fields', 'error');
+                return;
+            }
+            
+            registerBtn.disabled = true;
+            registerBtn.innerHTML = `<span class="btn-icon">${ICON_SPINNER}</span> Registering...`;
+
+            try {
+                const result = await registerUser(name, email);
+                if (result.success && result.recoveryCodes && result.recoveryCodes.length) {
+                    showStatus('Registration successful!', 'success');
+                    registerForm.hidden = true;
+                    const list = document.getElementById('recoveryCodesList');
+                    list.innerHTML = '';
+                    result.recoveryCodes.forEach(code => {
+                        const li = document.createElement('li');
+                        li.textContent = code;
+                        list.appendChild(li);
+                    });
+                    document.getElementById('recoveryCodesBox').hidden = false;
+                } else if (result.success) {
+                    showStatus('Registration successful! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 1500);
+                } else {
+                    showStatus(result.error || 'Registration failed', 'error');
+                    registerBtn.disabled = false;
+                    registerBtn.innerHTML = `<span class="btn-icon">${ICON_LOCK}</span> Register with Biometrics`;
+                }
+            } catch (error) {
+                showStatus('Registration failed: ' + error.message, 'error');
+                registerBtn.disabled = false;
+                registerBtn.innerHTML = `<span class="btn-icon">${ICON_LOCK}</span> Register with Biometrics`;
+            }
+        });
+        
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type}`;
+        }
+
+        document.getElementById('continueBtn').addEventListener('click', () => {
+            window.location.href = '/dashboard';
+        });
+    </script>
+</body>
+</html>

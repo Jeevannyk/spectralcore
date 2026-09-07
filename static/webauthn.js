@@ -23,18 +23,30 @@ function arrayBufferToBase64url(buffer) {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-// Register a new user with WebAuthn
-async function registerUser(name, email) {
+// Headers for every state-changing request: the CSRF token is rendered into
+// a <meta> tag by the server and echoed back here. Cross-site pages can't
+// read it, so they can't forge these calls.
+function jsonHeaders() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': meta ? meta.content : ''
+    };
+}
+
+// Register a new user with WebAuthn.
+// Pass { crossPlatform: true } to force a phone/security-key (QR) prompt
+// instead of this machine's own platform authenticator — used for "add
+// another device" when this device is already registered.
+async function registerUser(name, email, { crossPlatform = false } = {}) {
     try {
         console.log('Starting registration for:', email);
-        
+
         // Step 1: Get registration options from server
         const beginResponse = await fetch('/api/register/begin', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ name, email })
+            headers: jsonHeaders(),
+            body: JSON.stringify({ name, email, crossPlatform })
         });
         
         if (!beginResponse.ok) {
@@ -89,9 +101,7 @@ async function registerUser(name, email) {
         // Step 5: Send credential to server for verification
         const completeResponse = await fetch('/api/register/complete', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: jsonHeaders(),
             body: JSON.stringify(credentialData)
         });
         
@@ -102,7 +112,7 @@ async function registerUser(name, email) {
         
         const result = await completeResponse.json();
         console.log('Registration completed:', result);
-        return { success: result.verified };
+        return { success: result.verified, recoveryCodes: result.recoveryCodes };
         
     } catch (error) {
         console.error('Registration error:', error);
@@ -123,88 +133,100 @@ async function registerUser(name, email) {
     }
 }
 
-// Login user with WebAuthn
+// Fetch + convert authentication options from the server. Pass no email to
+// get the "conditional UI" options (server leaves allowCredentials empty so
+// the browser can offer any discoverable passkey for this site).
+async function getLoginOptions(email) {
+    const beginResponse = await fetch('/api/login/begin', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify(email ? { email } : {})
+    });
+
+    if (!beginResponse.ok) {
+        const error = await beginResponse.json();
+        throw new Error(error.error || 'Failed to begin login');
+    }
+
+    const options = await beginResponse.json();
+    return {
+        ...options.publicKey,
+        challenge: base64urlToArrayBuffer(options.publicKey.challenge),
+        allowCredentials: options.publicKey.allowCredentials?.map(cred => ({
+            ...cred,
+            id: base64urlToArrayBuffer(cred.id)
+        })) || []
+    };
+}
+
+// Send a completed assertion to the server for verification.
+async function submitAssertion(assertion) {
+    const assertionData = {
+        id: assertion.id,
+        rawId: arrayBufferToBase64url(assertion.rawId),
+        type: assertion.type,
+        response: {
+            authenticatorData: arrayBufferToBase64url(assertion.response.authenticatorData),
+            clientDataJSON: arrayBufferToBase64url(assertion.response.clientDataJSON),
+            signature: arrayBufferToBase64url(assertion.response.signature),
+            userHandle: assertion.response.userHandle ? arrayBufferToBase64url(assertion.response.userHandle) : null
+        }
+    };
+
+    const completeResponse = await fetch('/api/login/complete', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify(assertionData)
+    });
+
+    if (!completeResponse.ok) {
+        const error = await completeResponse.json();
+        throw new Error(error.error || 'Failed to complete login');
+    }
+
+    return completeResponse.json();
+}
+
+// Tracks the background conditional-UI (autofill) request so an explicit
+// login can cancel it first — a browser only allows one pending
+// navigator.credentials.get() call at a time; without this, clicking
+// "Login" while the autofill request is still pending throws
+// "A request is already pending."
+let conditionalLoginAbortController = null;
+
+function cancelConditionalLogin() {
+    if (conditionalLoginAbortController) {
+        conditionalLoginAbortController.abort();
+        conditionalLoginAbortController = null;
+    }
+}
+
+// Login user with WebAuthn (explicit, button-driven flow)
 async function loginUser(email) {
     try {
         console.log('Starting login for:', email);
-        
-        // Step 1: Get authentication options from server
-        const beginResponse = await fetch('/api/login/begin', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email })
-        });
-        
-        if (!beginResponse.ok) {
-            const error = await beginResponse.json();
-            throw new Error(error.error || 'Failed to begin login');
-        }
-        
-        const options = await beginResponse.json();
-        console.log('Login options received:', options);
-        
-        // Step 2: Convert base64url strings to ArrayBuffers
-        const publicKeyCredentialRequestOptions = {
-            ...options.publicKey,
-            challenge: base64urlToArrayBuffer(options.publicKey.challenge),
-            allowCredentials: options.publicKey.allowCredentials?.map(cred => ({
-                ...cred,
-                id: base64urlToArrayBuffer(cred.id)
-            })) || []
-        };
-        
+        cancelConditionalLogin();
+
+        const publicKeyCredentialRequestOptions = await getLoginOptions(email);
         console.log('Converted options for WebAuthn API:', publicKeyCredentialRequestOptions);
-        
-        // Step 3: Get assertion using WebAuthn API (this triggers biometric prompt)
+
         console.log('Calling navigator.credentials.get - biometric prompt should appear now...');
         const assertion = await navigator.credentials.get({
             publicKey: publicKeyCredentialRequestOptions
         });
-        
+
         if (!assertion) {
             throw new Error('Failed to get assertion - user may have cancelled biometric authentication');
         }
-        
+
         console.log('Assertion created successfully:', assertion);
-        
-        // Step 4: Convert ArrayBuffers back to base64url for transmission
-        const assertionData = {
-            id: assertion.id,
-            rawId: arrayBufferToBase64url(assertion.rawId),
-            type: assertion.type,
-            response: {
-                authenticatorData: arrayBufferToBase64url(assertion.response.authenticatorData),
-                clientDataJSON: arrayBufferToBase64url(assertion.response.clientDataJSON),
-                signature: arrayBufferToBase64url(assertion.response.signature),
-                userHandle: assertion.response.userHandle ? arrayBufferToBase64url(assertion.response.userHandle) : null
-            }
-        };
-        
-        console.log('Sending assertion to server:', assertionData);
-        
-        // Step 5: Send assertion to server for verification
-        const completeResponse = await fetch('/api/login/complete', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(assertionData)
-        });
-        
-        if (!completeResponse.ok) {
-            const error = await completeResponse.json();
-            throw new Error(error.error || 'Failed to complete login');
-        }
-        
-        const result = await completeResponse.json();
+        const result = await submitAssertion(assertion);
         console.log('Login completed:', result);
         return { success: result.verified };
-        
+
     } catch (error) {
         console.error('Login error:', error);
-        
+
         // Provide more user-friendly error messages
         let userMessage = error.message;
         if (error.name === 'NotSupportedError') {
@@ -216,8 +238,48 @@ async function loginUser(email) {
         } else if (error.name === 'AbortError') {
             userMessage = 'Login was cancelled. Please try again.';
         }
-        
+
         return { success: false, error: userMessage };
+    }
+}
+
+// Passive "conditional UI" login: as soon as the user focuses the email
+// field, the browser's own autofill dropdown offers a saved passkey, with
+// no separate button click. Requires a discoverable (resident-key) passkey.
+// Call this once on page load; it resolves only if the user actually picks
+// a credential from the browser's autofill UI, or rejects harmlessly if the
+// page navigates away first.
+async function tryConditionalLogin(onSuccess, onError) {
+    if (!window.PublicKeyCredential || !PublicKeyCredential.isConditionalMediationAvailable) {
+        return;
+    }
+    try {
+        const available = await PublicKeyCredential.isConditionalMediationAvailable();
+        if (!available) return;
+
+        const publicKeyCredentialRequestOptions = await getLoginOptions(null);
+        const controller = new AbortController();
+        conditionalLoginAbortController = controller;
+
+        const assertion = await navigator.credentials.get({
+            publicKey: publicKeyCredentialRequestOptions,
+            mediation: 'conditional',
+            signal: controller.signal
+        });
+        conditionalLoginAbortController = null;
+        if (!assertion) return;
+
+        const result = await submitAssertion(assertion);
+        if (result.verified) {
+            onSuccess && onSuccess();
+        }
+    } catch (error) {
+        // AbortError fires whenever the page navigates away while this is
+        // pending — that's normal, not a failure worth surfacing.
+        if (error.name !== 'AbortError') {
+            console.log('Conditional UI login did not complete:', error);
+            onError && onError(error);
+        }
     }
 }
 
@@ -266,13 +328,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
     }
     
-    // Check biometric support
+    // Check biometric support (informational only — cross-device QR/hybrid
+    // registration works via navigator.credentials.create() even without a
+    // local platform authenticator, so we must not disable the form for it)
     const biometricAvailable = await checkBiometricSupport();
     if (!biometricAvailable) {
         const statusDiv = document.getElementById('status');
         if (statusDiv) {
-            statusDiv.textContent = 'Biometric authentication is not available on this device. Please ensure you have set up Windows Hello, Touch ID, Face ID, or another biometric method.';
-            statusDiv.className = 'status-message error';
+            statusDiv.textContent = 'No fingerprint/face sensor detected on this device — you\'ll be prompted with a QR code to continue with your phone instead.';
+            statusDiv.className = 'status-message';
         }
     } else {
         console.log('WebAuthn and biometric authentication are both supported!');

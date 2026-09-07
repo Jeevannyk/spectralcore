@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Login - SecurePass</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
         <div class="auth-form">
             <div class="form-header">
-                <h1>🔐 SecurePass</h1>
+                <h1><svg class="logo-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="url(#lockGrad)"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" stroke="url(#lockGrad)" stroke-width="2.2" stroke-linecap="round"/><rect x="11.1" y="14" width="1.8" height="4" rx="0.9" fill="#0f0f18"/><defs><linearGradient id="lockGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#7b79ff"/><stop offset="1" stop-color="#5ac8fa"/></linearGradient></defs></svg>SecurePass</h1>
                 <h2>Welcome Back</h2>
                 <p>Login with your biometric authentication</p>
             </div>
@@ -18,26 +20,51 @@
             <form id="loginForm" class="form">
                 <div class="form-group">
                     <label for="email">Email Address</label>
-                    <input type="email" id="email" name="email" required placeholder="Enter your email">
+                    <input type="email" id="email" name="email" required placeholder="Enter your email" autocomplete="username webauthn">
                 </div>
-                
+
                 <button type="submit" class="btn btn-primary" id="loginBtn">
-                    <span class="btn-icon">🔓</span>
+                    <span class="btn-icon"><svg class="icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg></span>
                     Login with Biometrics
                 </button>
             </form>
-            
+
             <div id="status" class="status-message"></div>
-            
+
             <div class="form-footer">
                 <p>Don't have an account? <a href="/register">Register here</a></p>
+                <p><a href="#" id="recoveryToggle">Lost your device? Use a recovery code</a></p>
                 <p><a href="/">← Back to Home</a></p>
+            </div>
+
+            <form id="recoveryForm" class="form" hidden>
+                <div class="form-group">
+                    <label for="recoveryEmail">Email Address</label>
+                    <input type="email" id="recoveryEmail" name="recoveryEmail" required placeholder="Enter your email">
+                </div>
+                <div class="form-group">
+                    <label for="recoveryCode">Recovery Code</label>
+                    <input type="text" id="recoveryCode" name="recoveryCode" required placeholder="XXXX-XXXX-XXXX">
+                </div>
+                <button type="submit" class="btn btn-secondary" id="recoveryBtn">
+                    Use Recovery Code
+                </button>
+            </form>
+
+            <div id="newRecoveryCodesBox" class="security-note" hidden>
+                <h3 style="margin-bottom: 10px;">Your old recovery codes no longer work</h3>
+                <p>Using one code invalidates the whole set. Save this new list — it's shown only once.</p>
+                <ul id="newRecoveryCodesList" style="list-style: none; margin: 15px 0; font-family: monospace; font-size: 1.05rem; line-height: 1.9;"></ul>
+                <button type="button" class="btn btn-primary" id="recoveryContinueBtn" style="width: 100%;">I've saved these — Continue</button>
             </div>
         </div>
     </div>
     
     <script src="{{ url_for('static', filename='webauthn.js') }}"></script>
     <script>
+        const ICON_UNLOCK = '<svg class="icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
+        const ICON_SPINNER = '<svg class="icon icon-spin" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>';
+
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -51,8 +78,8 @@
             }
             
             loginBtn.disabled = true;
-            loginBtn.innerHTML = '<span class="btn-icon">⏳</span> Authenticating...';
-            
+            loginBtn.innerHTML = `<span class="btn-icon">${ICON_SPINNER}</span> Authenticating...`;
+
             try {
                 const result = await loginUser(email);
                 if (result.success) {
@@ -63,12 +90,12 @@
                 } else {
                     showStatus(result.error || 'Login failed', 'error');
                     loginBtn.disabled = false;
-                    loginBtn.innerHTML = '<span class="btn-icon">🔓</span> Login with Biometrics';
+                    loginBtn.innerHTML = `<span class="btn-icon">${ICON_UNLOCK}</span> Login with Biometrics`;
                 }
             } catch (error) {
                 showStatus('Login failed: ' + error.message, 'error');
                 loginBtn.disabled = false;
-                loginBtn.innerHTML = '<span class="btn-icon">🔓</span> Login with Biometrics';
+                loginBtn.innerHTML = `<span class="btn-icon">${ICON_UNLOCK}</span> Login with Biometrics`;
             }
         });
         
@@ -77,6 +104,62 @@
             statusDiv.textContent = message;
             statusDiv.className = `status-message ${type}`;
         }
+
+        // Conditional UI: as soon as the browser can offer a saved passkey
+        // for this site, it shows up in the email field's own autofill
+        // dropdown — no separate click needed.
+        tryConditionalLogin(() => {
+            showStatus('Login successful! Redirecting...', 'success');
+            setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
+        });
+
+        // Recovery code fallback (for a lost/broken authenticator)
+        const recoveryToggle = document.getElementById('recoveryToggle');
+        const recoveryForm = document.getElementById('recoveryForm');
+        recoveryToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            recoveryForm.hidden = !recoveryForm.hidden;
+        });
+
+        recoveryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('recoveryEmail').value;
+            const code = document.getElementById('recoveryCode').value;
+            const recoveryBtn = document.getElementById('recoveryBtn');
+
+            recoveryBtn.disabled = true;
+            try {
+                const resp = await fetch('/api/login/recovery', {
+                    method: 'POST',
+                    headers: jsonHeaders(),
+                    body: JSON.stringify({ email, code })
+                });
+                const result = await resp.json();
+                if (resp.ok && result.verified) {
+                    showStatus('Recovery code accepted.', 'success');
+                    document.getElementById('loginForm').hidden = true;
+                    recoveryForm.hidden = true;
+                    const list = document.getElementById('newRecoveryCodesList');
+                    list.innerHTML = '';
+                    (result.recoveryCodes || []).forEach(newCode => {
+                        const li = document.createElement('li');
+                        li.textContent = newCode;
+                        list.appendChild(li);
+                    });
+                    document.getElementById('newRecoveryCodesBox').hidden = false;
+                } else {
+                    showStatus(result.error || 'Invalid recovery code', 'error');
+                    recoveryBtn.disabled = false;
+                }
+            } catch (error) {
+                showStatus('Recovery login failed: ' + error.message, 'error');
+                recoveryBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('recoveryContinueBtn').addEventListener('click', () => {
+            window.location.href = '/dashboard';
+        });
     </script>
 </body>
 </html>

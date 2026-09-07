@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>Manage Devices - SecurePass</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="dashboard">
+            <header class="dashboard-header">
+                <div class="header-content">
+                    <h1><svg class="logo-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="url(#lockGrad)"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" stroke="url(#lockGrad)" stroke-width="2.2" stroke-linecap="round"/><rect x="11.1" y="14" width="1.8" height="4" rx="0.9" fill="#171429"/><defs><linearGradient id="lockGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#7b79ff"/><stop offset="1" stop-color="#5ac8fa"/></linearGradient></defs></svg>Manage Devices</h1>
+                    <div class="user-info">
+                        <span class="welcome-text">{{ user.email }}</span>
+                        <a href="/dashboard" class="btn btn-outline">Back</a>
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard-content">
+                <div id="status" class="status-message"></div>
+                <div id="deviceList" class="device-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+
+        function formatDate(iso) {
+            if (!iso) return 'Never';
+            return new Date(iso).toLocaleString();
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type}`;
+        }
+
+        async function loadDevices() {
+            const listEl = document.getElementById('deviceList');
+            listEl.innerHTML = '<p style="color: var(--text-secondary);">Loading...</p>';
+
+            const resp = await fetch('/api/devices');
+            if (!resp.ok) {
+                window.location.href = '/login';
+                return;
+            }
+            const { devices } = await resp.json();
+
+            if (!devices.length) {
+                listEl.innerHTML = '<p style="color: var(--text-secondary);">No devices registered.</p>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            devices.forEach(device => {
+                const row = document.createElement('div');
+                row.className = 'device-row';
+                row.innerHTML = `
+                    <div class="device-info">
+                        <div class="device-name" data-credential="${escapeHtml(device.credentialId)}">${escapeHtml(device.deviceName)}</div>
+                        <div class="device-meta">Added ${formatDate(device.createdAt)} · Last used ${formatDate(device.lastUsedAt)}</div>
+                    </div>
+                    <div class="device-actions">
+                        <button type="button" class="btn btn-secondary btn-small" data-action="rename" data-credential="${escapeHtml(device.credentialId)}">Rename</button>
+                        <button type="button" class="btn btn-outline btn-small" data-action="revoke" data-credential="${escapeHtml(device.credentialId)}">Revoke</button>
+                    </div>
+                `;
+                listEl.appendChild(row);
+            });
+        }
+
+        document.getElementById('deviceList').addEventListener('click', async (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const credentialId = btn.dataset.credential;
+            const action = btn.dataset.action;
+
+            if (action === 'rename') {
+                const nameEl = document.querySelector(`.device-name[data-credential="${CSS.escape(credentialId)}"]`);
+                const newName = prompt('New device name:', nameEl.textContent);
+                if (!newName || !newName.trim()) return;
+
+                const resp = await fetch(`/api/devices/${encodeURIComponent(credentialId)}/rename`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+                    body: JSON.stringify({ name: newName.trim() })
+                });
+                if (resp.ok) {
+                    showStatus('Device renamed.', 'success');
+                    loadDevices();
+                } else {
+                    const err = await resp.json();
+                    showStatus(err.error || 'Rename failed', 'error');
+                }
+            }
+
+            if (action === 'revoke') {
+                if (!confirm('Revoke this device? It will no longer be able to log in.')) return;
+
+                const resp = await fetch(`/api/devices/${encodeURIComponent(credentialId)}`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-Token': CSRF_TOKEN }
+                });
+                if (resp.ok) {
+                    showStatus('Device revoked.', 'success');
+                    loadDevices();
+                } else {
+                    const err = await resp.json();
+                    showStatus(err.error || 'Revoke failed', 'error');
+                }
+            }
+        });
+
+        loadDevices();
+    </script>
+</body>
+</html>

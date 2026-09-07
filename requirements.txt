@@ -1,2 +1,7 @@
 Flask==2.3.3
 webauthn==1.11.1
+Flask-SQLAlchemy==3.1.1
+Flask-Limiter==4.1.1
+# test-only: tests/virtual_authenticator.py builds/signs WebAuthn payloads
+cbor2==5.7.0
+cryptography==46.0.2

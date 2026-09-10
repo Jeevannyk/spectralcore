@@ -159,9 +159,9 @@ async function getLoginOptions(email) {
     };
 }
 
-// Send a completed assertion to the server for verification.
-async function submitAssertion(assertion) {
-    const assertionData = {
+// Flatten an assertion into the base64url JSON the server expects.
+function assertionToJson(assertion) {
+    return {
         id: assertion.id,
         rawId: arrayBufferToBase64url(assertion.rawId),
         type: assertion.type,
@@ -172,6 +172,51 @@ async function submitAssertion(assertion) {
             userHandle: assertion.response.userHandle ? arrayBufferToBase64url(assertion.response.userHandle) : null
         }
     };
+}
+
+// Prove the person at the keyboard is still the account owner, right now.
+// The server requires this before it will attach a new passkey, so an
+// unattended session or a stolen cookie can't quietly add its own key.
+async function stepUpReauth() {
+    cancelConditionalLogin();
+
+    const beginResponse = await fetch('/api/stepup/begin', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: '{}'
+    });
+    if (!beginResponse.ok) {
+        throw new Error('Your session expired — please log in again');
+    }
+
+    const options = await beginResponse.json();
+    const assertion = await navigator.credentials.get({
+        publicKey: {
+            ...options.publicKey,
+            challenge: base64urlToArrayBuffer(options.publicKey.challenge),
+            allowCredentials: options.publicKey.allowCredentials?.map(cred => ({
+                ...cred,
+                id: base64urlToArrayBuffer(cred.id)
+            })) || []
+        }
+    });
+    if (!assertion) {
+        throw new Error('Re-authentication was cancelled');
+    }
+
+    const completeResponse = await fetch('/api/stepup/complete', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify(assertionToJson(assertion))
+    });
+    if (!completeResponse.ok) {
+        throw new Error('Re-authentication failed — please try again');
+    }
+}
+
+// Send a completed assertion to the server for verification.
+async function submitAssertion(assertion) {
+    const assertionData = assertionToJson(assertion);
 
     const completeResponse = await fetch('/api/login/complete', {
         method: 'POST',

@@ -93,7 +93,7 @@
     </div>
 
     <script src="{{ url_for('static', filename='webauthn.js') }}"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
         const ICON_SPINNER = '<svg class="icon icon-spin" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>';
 
         document.getElementById('addDeviceBtn').addEventListener('click', async () => {
@@ -109,6 +109,12 @@
                     throw new Error('Your session expired — please log in again');
                 }
                 const { name, email } = await whoami.json();
+
+                // The server won't attach a new passkey to a session that
+                // hasn't just re-proved itself; do that first.
+                btn.innerHTML = `<span class="btn-icon">${ICON_SPINNER}</span> Confirm it's you...`;
+                await stepUpReauth();
+                btn.innerHTML = `<span class="btn-icon">${ICON_SPINNER}</span> Adding device...`;
 
                 // This device is already registered — a plain registerUser()
                 // call would try this machine's own authenticator again and

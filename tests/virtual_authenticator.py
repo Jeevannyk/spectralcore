@@ -40,9 +40,13 @@ class VirtualAuthenticator:
     def _rp_id_hash(self, rp_id: str) -> bytes:
         return hashlib.sha256(rp_id.encode()).digest()
 
-    def create_credential(self, rp_id: str, challenge_b64url: str, origin: str):
+    def create_credential(self, rp_id: str, challenge_b64url: str, origin: str,
+                          user_verified: bool = True):
         """Simulates navigator.credentials.create() -> returns the JSON body
-        the browser would POST to /api/register/complete."""
+        the browser would POST to /api/register/complete.
+
+        user_verified=False models an authenticator (or a patched client) that
+        skipped the biometric/PIN and only set the "user present" flag."""
         credential_id = os.urandom(32)
         private_key = ec.generate_private_key(ec.SECP256R1())
         self._keys[credential_id] = private_key
@@ -53,7 +57,7 @@ class VirtualAuthenticator:
         y = pub_numbers.y.to_bytes(32, 'big')
         cose_key = {1: 2, 3: -7, -1: 1, -2: x, -3: y}  # EC2 / ES256 / P-256
 
-        flags = UP | UV | AT
+        flags = UP | AT | (UV if user_verified else 0)
         auth_data = (
             self._rp_id_hash(rp_id)
             + bytes([flags])
@@ -89,13 +93,19 @@ class VirtualAuthenticator:
         }
 
     def get_assertion(self, rp_id: str, challenge_b64url: str, origin: str,
-                       credential_id: bytes, user_handle: bytes):
-        """Simulates navigator.credentials.get()."""
+                       credential_id: bytes, user_handle: bytes,
+                       user_verified: bool = True, sign_count: int = None):
+        """Simulates navigator.credentials.get().
+
+        user_verified=False models an authenticator that never checked the
+        user (only presence); sign_count forces a specific counter value, e.g.
+        to replay an old one the way a cloned authenticator would."""
         private_key = self._keys[credential_id]
         self._sign_counts[credential_id] += 1
-        sign_count = self._sign_counts[credential_id]
+        if sign_count is None:
+            sign_count = self._sign_counts[credential_id]
 
-        flags = UP | UV
+        flags = UP | (UV if user_verified else 0)
         auth_data = (
             self._rp_id_hash(rp_id)
             + bytes([flags])
